@@ -6,6 +6,10 @@ const router = express.Router();
 
 // GitHub OAuth login start
 router.get("/github", (req, res, next) => {
+  console.log("🚀 GitHub OAuth login initiated");
+  console.log("📋 Request query:", req.query);
+  console.log("🌐 Request headers:", req.headers);
+  
   const redirectTo = req.query.redirectTo || "/dashboard";
   passport.authenticate("github", {
     scope: ["user:email", "repo"],
@@ -16,13 +20,27 @@ router.get("/github", (req, res, next) => {
 // GitHub OAuth callback
 router.get(
   "/github/callback",
+  (req, res, next) => {
+    console.log("🔄 GitHub callback received");
+    console.log("📋 Callback query:", req.query);
+    console.log("🌐 Callback headers:", req.headers);
+    console.log("🍪 Callback cookies:", req.cookies);
+    next();
+  },
   passport.authenticate("github", {
     session: false,
     failureRedirect: "/api/auth/login",
   }),
   (req, res) => {
     try {
-      console.log("🔐 GitHub callback received for user:", req.user?.username);
+      console.log("🔐 GitHub callback processing for user:", req.user?.username);
+      console.log("👤 User object:", req.user);
+      
+      if (!req.user) {
+        console.error("❌ No user object in callback");
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        return res.redirect(`${frontendUrl}/login?error=no_user`);
+      }
       
       const token = jwt.sign(
         {
@@ -34,8 +52,13 @@ router.get(
         { expiresIn: "7d" }
       );
 
+      console.log("🔑 JWT token created:", token.substring(0, 20) + "...");
+
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
       const redirectTo = decodeURIComponent(req.query.state || "/dashboard");
+
+      console.log("🎯 Frontend URL:", frontendUrl);
+      console.log("🎯 Redirect to:", redirectTo);
 
       // ✅ Enhanced cookie configuration for production
       const cookieOptions = {
@@ -244,6 +267,30 @@ router.get("/debug/set-cookie", (req, res) => {
     message: "Test cookie set",
     cookieOptions,
     testToken,
+    success: true,
+  });
+});
+
+// Test endpoint to verify GitHub OAuth is working
+router.get("/test-oauth", (req, res) => {
+  console.log("🧪 Test OAuth endpoint called");
+  console.log("📋 Environment variables:");
+  console.log("  - NODE_ENV:", process.env.NODE_ENV);
+  console.log("  - FRONTEND_URL:", process.env.FRONTEND_URL);
+  console.log("  - COOKIE_DOMAIN:", process.env.COOKIE_DOMAIN);
+  console.log("  - GITHUB_CLIENT_ID:", process.env.GITHUB_CLIENT_ID ? "SET" : "NOT SET");
+  console.log("  - GITHUB_CLIENT_SECRET:", process.env.GITHUB_CLIENT_SECRET ? "SET" : "NOT SET");
+  console.log("  - GITHUB_CALLBACK_URL:", process.env.GITHUB_CALLBACK_URL);
+  console.log("  - JWT_SECRET:", process.env.JWT_SECRET ? "SET" : "NOT SET");
+  
+  res.json({
+    message: "OAuth test endpoint",
+    environment: process.env.NODE_ENV,
+    frontendUrl: process.env.FRONTEND_URL,
+    cookieDomain: process.env.COOKIE_DOMAIN,
+    githubClientId: process.env.GITHUB_CLIENT_ID ? "SET" : "NOT SET",
+    githubCallbackUrl: process.env.GITHUB_CALLBACK_URL,
+    jwtSecret: process.env.JWT_SECRET ? "SET" : "NOT SET",
     success: true,
   });
 });
