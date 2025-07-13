@@ -23,6 +23,21 @@ export function AuthProvider({ children }) {
         import.meta.env.VITE_API_URL || "http://localhost:5000"
       );
 
+      // ✅ Check for token in URL (fallback from OAuth)
+      const urlParams = new URLSearchParams(window.location.search);
+      const tokenFromUrl = urlParams.get('token');
+      
+      if (tokenFromUrl) {
+        console.log("🔑 Found token in URL, setting as cookie...");
+        // Set the token as a cookie
+        document.cookie = `token=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=strict`;
+        
+        // Clear the token from URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        console.log("✅ Token set as cookie from URL");
+      }
+
       try {
         console.log("📡 Attempting to fetch user profile...");
         const profile = await getProfile();
@@ -147,6 +162,7 @@ export function AuthProvider({ children }) {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const state = urlParams.get('state');
+    const token = urlParams.get('token');
     
     if (code && state) {
       console.log("🔄 Detected OAuth callback, waiting for cookie...");
@@ -162,6 +178,25 @@ export function AuthProvider({ children }) {
           navigate("/login", { replace: true });
         }
       }, 1000);
+    } else if (token) {
+      console.log("🔑 Detected token in URL, setting cookie and checking user...");
+      // Set the token as a cookie
+      document.cookie = `token=${token}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=strict`;
+      
+      // Clear the token from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // Check user state
+      setTimeout(async () => {
+        const success = await refreshUser();
+        if (success) {
+          console.log("✅ User authenticated with token from URL");
+          navigate("/dashboard", { replace: true });
+        } else {
+          console.log("❌ Failed to authenticate with token from URL");
+          navigate("/login", { replace: true });
+        }
+      }, 500);
     }
   };
 

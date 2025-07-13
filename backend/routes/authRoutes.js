@@ -17,7 +17,7 @@ router.get("/github", (req, res, next) => {
   })(req, res, next);
 });
 
-// GitHub OAuth callback
+// GitHub OAuth callback with multiple fallback options
 router.get(
   "/github/callback",
   (req, res, next) => {
@@ -60,54 +60,61 @@ router.get(
       console.log("🎯 Frontend URL:", frontendUrl);
       console.log("🎯 Redirect to:", redirectTo);
 
-      // ✅ Enhanced cookie configuration for production
-      const cookieOptions = {
+      // ✅ Multiple cookie setting strategies
+      const cookieStrategies = [
+        // Strategy 1: No domain (works for same domain)
+        {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: "/",
+        },
+        // Strategy 2: With domain for onrender.com
+        {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: "/",
+          domain: ".onrender.com",
+        },
+        // Strategy 3: With explicit cookie domain
+        {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: "/",
+          domain: process.env.COOKIE_DOMAIN,
+        }
+      ];
+
+      // Try multiple cookie strategies
+      cookieStrategies.forEach((strategy, index) => {
+        try {
+          res.cookie(`token_${index}`, token, strategy);
+          console.log(`🍪 Cookie strategy ${index} set:`, strategy);
+        } catch (error) {
+          console.error(`❌ Cookie strategy ${index} failed:`, error);
+        }
+      });
+
+      // Also set a simple cookie without domain restrictions
+      res.cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        path: "/", // Explicit path
-      };
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: "/",
+      });
 
-      // Handle domain configuration for production
-      if (process.env.NODE_ENV === "production") {
-        if (process.env.COOKIE_DOMAIN) {
-          cookieOptions.domain = process.env.COOKIE_DOMAIN;
-          console.log("🍪 Using explicit cookie domain:", process.env.COOKIE_DOMAIN);
-        } else {
-          // Auto-detect domain from frontend URL
-          try {
-            const url = new URL(frontendUrl);
-            if (url.hostname !== "localhost") {
-              // For onrender.com domains, we need to handle subdomains properly
-              if (url.hostname.includes('onrender.com')) {
-                // Extract the subdomain part for onrender.com
-                const subdomain = url.hostname.split('.')[0];
-                cookieOptions.domain = `.onrender.com`;
-                console.log("🍪 Using onrender.com cookie domain:", cookieOptions.domain);
-              } else {
-                cookieOptions.domain = url.hostname;
-                console.log("🍪 Using auto-detected cookie domain:", cookieOptions.domain);
-              }
-            }
-          } catch (error) {
-            console.warn("Could not parse frontend URL for cookie domain:", error);
-          }
-        }
-      }
-
-      console.log("🍪 Setting cookie with options:", cookieOptions);
-      console.log("🔗 Frontend URL:", frontendUrl);
-      console.log("🎯 Redirecting to:", `${frontendUrl}${redirectTo}`);
-
-      // Set the token cookie
-      res.cookie("token", token, cookieOptions);
-
-      console.log("✅ Token cookie set successfully");
+      console.log("✅ All token cookies set successfully");
       console.log("🔗 Redirecting to:", `${frontendUrl}${redirectTo}`);
 
-      // ✅ Redirect without exposing token/user in URL
-      res.redirect(`${frontendUrl}${redirectTo}`);
+      // ✅ Redirect with token in URL as fallback (temporary)
+      const redirectUrl = `${frontendUrl}${redirectTo}?token=${encodeURIComponent(token)}`;
+      res.redirect(redirectUrl);
     } catch (error) {
       console.error("❌ Error in GitHub callback:", error);
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -116,19 +123,59 @@ router.get(
   }
 );
 
-// Authenticated profile route
-router.get("/profile", authenticateToken, async (req, res) => {
+// Authenticated profile route with multiple token sources
+router.get("/profile", async (req, res) => {
   try {
-    console.log("👤 Profile request from user:", req.user.username);
+    console.log("👤 Profile request received");
+    console.log("🍪 Cookies:", req.cookies);
+    console.log("🔍 Authorization header:", req.headers.authorization);
+
+    let token = null;
+
+    // Try multiple sources for the token
+    if (req.cookies.token) {
+      token = req.cookies.token;
+      console.log("✅ Found token in cookies");
+    } else if (req.cookies.token_0) {
+      token = req.cookies.token_0;
+      console.log("✅ Found token in token_0 cookie");
+    } else if (req.cookies.token_1) {
+      token = req.cookies.token_1;
+      console.log("✅ Found token in token_1 cookie");
+    } else if (req.cookies.token_2) {
+      token = req.cookies.token_2;
+      console.log("✅ Found token in token_2 cookie");
+    } else if (req.headers.authorization) {
+      token = req.headers.authorization.replace('Bearer ', '');
+      console.log("✅ Found token in Authorization header");
+    } else {
+      console.log("❌ No token found in any source");
+      return res.status(401).json({
+        message: "Access token required",
+        success: false,
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await require("../models/User").findById(decoded.userId);
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid token - user not found",
+        success: false,
+      });
+    }
+
+    console.log("✅ User authenticated:", user.username);
 
     res.json({
       message: "User profile fetched successfully",
       user: {
-        id: req.user._id,
-        username: req.user.username,
-        displayName: req.user.displayName,
-        email: req.user.email,
-        avatarUrl: req.user.avatarUrl,
+        id: user._id,
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
       },
       success: true,
     });
@@ -142,46 +189,39 @@ router.get("/profile", authenticateToken, async (req, res) => {
   }
 });
 
-// Logout route (clears cookie with matching options)
+// Logout route (clears all possible cookies)
 router.post("/logout", (req, res) => {
   try {
     console.log("🚪 Logging out user...");
 
-    // ✅ Clear cookie with EXACT same options as when it was set
-    const cookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-      path: "/", // Must match the path used when setting the cookie
-    };
-
-    // Handle domain configuration for production
-    if (process.env.NODE_ENV === "production") {
-      if (process.env.COOKIE_DOMAIN) {
-        cookieOptions.domain = process.env.COOKIE_DOMAIN;
-      } else {
-        // Auto-detect domain from frontend URL
-        try {
-          const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-          const url = new URL(frontendUrl);
-          if (url.hostname !== "localhost") {
-            // For onrender.com domains, we need to handle subdomains properly
-            if (url.hostname.includes('onrender.com')) {
-              cookieOptions.domain = `.onrender.com`;
-            } else {
-              cookieOptions.domain = url.hostname;
-            }
-          }
-        } catch (error) {
-          console.warn("Could not parse frontend URL for cookie domain:", error);
-        }
+    // Clear all possible token cookies
+    const cookiesToClear = ["token", "token_0", "token_1", "token_2"];
+    
+    cookiesToClear.forEach(cookieName => {
+      try {
+        res.clearCookie(cookieName, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+          path: "/",
+        });
+        
+        // Also try with domain
+        res.clearCookie(cookieName, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+          path: "/",
+          domain: ".onrender.com",
+        });
+        
+        console.log(`✅ Cleared cookie: ${cookieName}`);
+      } catch (error) {
+        console.error(`❌ Failed to clear cookie ${cookieName}:`, error);
       }
-    }
+    });
 
-    res.clearCookie("token", cookieOptions);
-
-    console.log("✅ Token cookie cleared successfully");
-    console.log("🍪 Clear cookie options:", cookieOptions);
+    console.log("✅ All token cookies cleared successfully");
 
     res.json({
       message: "Logout successful",
@@ -216,7 +256,7 @@ router.get("/health", (req, res) => {
   });
 });
 
-// Debug route to check cookie presence (remove in production)
+// Debug route to check cookie presence
 router.get("/debug/cookies", (req, res) => {
   res.json({
     cookies: req.cookies,

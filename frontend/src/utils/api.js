@@ -21,6 +21,13 @@ api.interceptors.request.use(
     config.retryCount = config.retryCount || 0;
     config.maxRetries = 3;
     
+    // ✅ Try to get token from multiple sources
+    const token = getTokenFromMultipleSources();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+      console.log("🔑 Added Authorization header with token");
+    }
+    
     return config;
   },
   (error) => {
@@ -28,6 +35,29 @@ api.interceptors.request.use(
     return Promise.reject(error);
   }
 );
+
+// ✅ Function to get token from multiple sources
+function getTokenFromMultipleSources() {
+  // Try to get token from cookies
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'token' || name === 'token_0' || name === 'token_1' || name === 'token_2') {
+      console.log(`🍪 Found token in cookie: ${name}`);
+      return value;
+    }
+  }
+  
+  // Try to get token from localStorage (fallback)
+  const localStorageToken = localStorage.getItem('auth_token');
+  if (localStorageToken) {
+    console.log("💾 Found token in localStorage");
+    return localStorageToken;
+  }
+  
+  console.log("❌ No token found in any source");
+  return null;
+}
 
 // Response interceptor for debugging
 api.interceptors.response.use(
