@@ -6,6 +6,14 @@ export default function Login() {
   const { user, loading } = useAuth();
   const location = useLocation();
 
+  console.log(
+    "🔐 Login page - Loading:",
+    loading,
+    "User:",
+    user ? "exists" : "null"
+  );
+
+  // Show loading spinner while checking auth
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-gray-50">
@@ -14,8 +22,10 @@ export default function Login() {
     );
   }
 
-  if (user) {
+  // If user is already logged in, redirect to dashboard
+  if (!loading && user) {
     const redirectTo = location.state?.from?.pathname || "/dashboard";
+    console.log("✅ User already logged in, redirecting to:", redirectTo);
     return <Navigate to={redirectTo} replace />;
   }
 
@@ -23,7 +33,9 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white rounded-xl shadow-md p-8 w-full max-w-md">
         <div className="text-center space-y-4">
-          <h1 className="text-3xl font-bold text-gray-800">Welcome to DevDash</h1>
+          <h1 className="text-3xl font-bold text-gray-800">
+            Welcome to DevDash
+          </h1>
           <p className="text-gray-600 mb-6">
             Connect with GitHub to access your developer dashboard
           </p>
@@ -37,4 +49,4 @@ export default function Login() {
       </div>
     </div>
   );
-}   
+}
