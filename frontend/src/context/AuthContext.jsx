@@ -29,18 +29,27 @@ export function AuthProvider({ children }) {
       
       if (tokenFromUrl) {
         console.log("🔑 Found token in URL, setting as cookie...");
+        
         // Set the token as a cookie with proper parameters
+        const isSecure = window.location.protocol === 'https:';
         const cookieValue = `token=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}`;
-        if (window.location.protocol === 'https:') {
+        
+        if (isSecure) {
           document.cookie = `${cookieValue}; secure; samesite=strict`;
         } else {
           document.cookie = `${cookieValue}; samesite=lax`;
         }
         
+        // Also set alternative cookie variations for better compatibility
+        if (isSecure) {
+          document.cookie = `token_alt=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=none`;
+          document.cookie = `token_cross=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=none`;
+        }
+        
         // Clear the token from URL
         window.history.replaceState({}, document.title, window.location.pathname);
         
-        console.log("✅ Token set as cookie from URL");
+        console.log("✅ Token set as cookies from URL");
       }
 
       try {

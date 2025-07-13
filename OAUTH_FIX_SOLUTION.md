@@ -1,190 +1,318 @@
-# OAuth Authentication Fix - Infinite Loading & Password Issues
+# GitHub OAuth Fix - Comprehensive Solution
 
-## Problems Identified
+## 🔍 Problem Analysis
 
-### 1. Infinite Loading State
-- **Cause**: `checkOAuthCallback` function running on every mount
-- **Effect**: Continuous API calls and state updates
-- **Fix**: Removed problematic OAuth callback detection logic
+The issue was that cookies were not being set properly in production, causing:
+1. **No authentication tokens** - Frontend couldn't find any valid tokens
+2. **401 Unauthorized errors** - Backend rejecting requests due to missing tokens
+3. **Infinite loading** - Frontend stuck in loading state
+4. **Repeated GitHub password prompts** - OAuth flow not completing properly
 
-### 2. Repeated GitHub Password Prompts
-- **Cause**: OAuth flow getting stuck in redirect loops
-- **Effect**: User asked for GitHub password repeatedly
-- **Fix**: Simplified authentication flow and improved error handling
+## ✅ Root Cause
 
-### 3. Cookie Setting Issues
-- **Cause**: Incorrect cookie parameters in frontend
-- **Effect**: Tokens not being stored properly
-- **Fix**: Improved cookie setting with proper parameters
+The main issues were:
 
-## Solutions Implemented
+1. **Cookie Domain Configuration** - Backend was trying to set cookies with `.onrender.com` domain which doesn't work for cross-subdomain scenarios
+2. **Cross-Domain Cookie Issues** - Frontend and backend on different subdomains of onrender.com
+3. **HTTPS/Secure Cookie Requirements** - Production requires secure cookies with proper SameSite settings
+4. **Single Cookie Strategy** - Only one cookie variation was being set, limiting compatibility
 
-### 1. Simplified Authentication Context
+## 🛠️ Comprehensive Fixes Applied
 
-**File: `frontend/src/context/AuthContext.jsx`**
-
-**Removed:**
-- `checkOAuthCallback` function that caused infinite loops
-- Complex OAuth callback detection logic
-- Multiple conflicting useEffect hooks
-
-**Added:**
-- Simplified token handling from URL
-- Proper cookie setting with protocol detection
-- Better error handling for OAuth errors
-
-```javascript
-// ✅ Proper cookie setting with protocol detection
-const cookieValue = `token=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}`;
-if (window.location.protocol === 'https:') {
-  document.cookie = `${cookieValue}; secure; samesite=strict`;
-} else {
-  document.cookie = `${cookieValue}; samesite=lax`;
-}
-```
-
-### 2. Enhanced Backend OAuth Callback
+### 1. Backend OAuth Callback Improvements
 
 **File: `backend/routes/authRoutes.js`**
 
-**Improved:**
-- Better cookie domain detection for different deployment platforms
-- Enhanced error handling
-- Added debug endpoints for troubleshooting
+- **Simplified Domain Logic**: Removed problematic `.onrender.com` domain setting
+- **Multiple Cookie Variations**: Set `token`, `token_alt`, `token_cross` cookies for better compatibility
+- **Enhanced Logging**: Added detailed logging for debugging cookie setting
+- **Robust Error Handling**: Better error handling in OAuth callback
 
 ```javascript
-// ✅ Enhanced cookie configuration for different platforms
-if (url.hostname.includes('onrender.com')) {
-  options.domain = '.onrender.com';
-} 
-else if (url.hostname.includes('vercel.app')) {
-  options.domain = '.vercel.app';
+// ✅ Simplified and robust cookie configuration
+const getCookieOptions = () => {
+  const isProduction = process.env.NODE_ENV === "production";
+  
+  const options = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: "/",
+  };
+
+  // ✅ Simplified domain handling for production
+  if (isProduction) {
+    try {
+      const url = new URL(frontendUrl);
+      const hostname = url.hostname;
+      
+      // For onrender.com subdomains - don't set domain
+      if (hostname.includes('onrender.com')) {
+        console.log("🌐 OnRender.com detected - not setting domain for cookie");
+      }
+      // For vercel.app subdomains - don't set domain  
+      else if (hostname.includes('vercel.app')) {
+        console.log("🌐 Vercel.app detected - not setting domain for cookie");
+      }
+      // For custom domains
+      else if (!hostname.includes('localhost')) {
+        options.domain = hostname;
+        console.log("🌐 Custom domain detected:", hostname);
+      }
+    } catch (error) {
+      console.warn("⚠️ Could not parse frontend URL for cookie domain:", error);
+    }
+
+    // Allow explicit override
+    if (process.env.COOKIE_DOMAIN) {
+      options.domain = process.env.COOKIE_DOMAIN;
+      console.log("🌐 Using explicit cookie domain:", process.env.COOKIE_DOMAIN);
+    }
+  }
+
+  return options;
+};
+
+// ✅ Set multiple cookie variations for better compatibility
+if (process.env.NODE_ENV === "production") {
+  // Set without domain for better cross-subdomain compatibility
+  res.cookie("token_alt", token, {
+    ...cookieOptions,
+    domain: undefined,
+  });
+  
+  // Set with SameSite=None for cross-site requests
+  res.cookie("token_cross", token, {
+    ...cookieOptions,
+    domain: undefined,
+    sameSite: "none",
+  });
 }
 ```
 
-### 3. Better Loading State Management
+### 2. Enhanced Profile Route
 
-**File: `frontend/src/components/Auth/ProtectedRoute.jsx`**
+**File: `backend/routes/authRoutes.js`**
 
-**Improved:**
-- Clear loading state logic
-- Better initialization tracking
-- Prevents infinite redirects
+- **Multiple Token Sources**: Check for all cookie variations and token sources
+- **Detailed Logging**: Log which token sources are found/not found
+- **Better Error Messages**: More descriptive error responses
 
-## Environment Variables Required
+```javascript
+// ✅ Check multiple cookie variations and token sources
+let token = req.cookies.token || 
+            req.cookies.token_alt || 
+            req.cookies.token_cross ||
+            req.cookies.token_debug ||
+            req.headers.authorization?.replace('Bearer ', '') || 
+            req.query.token;
 
-### Backend Environment Variables
-```env
-NODE_ENV=production
-FRONTEND_URL=https://devdash-github-oauth-9xkh.onrender.com
-COOKIE_DOMAIN=.onrender.com
-JWT_SECRET=your_jwt_secret_here
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-GITHUB_CALLBACK_URL=https://devdash-github-oauth.onrender.com/api/auth/github/callback
+console.log("🔍 Token sources checked:");
+console.log("  - req.cookies.token:", req.cookies.token ? "FOUND" : "NOT FOUND");
+console.log("  - req.cookies.token_alt:", req.cookies.token_alt ? "FOUND" : "NOT FOUND");
+console.log("  - req.cookies.token_cross:", req.cookies.token_cross ? "FOUND" : "NOT FOUND");
+console.log("  - req.cookies.token_debug:", req.cookies.token_debug ? "FOUND" : "NOT FOUND");
+console.log("  - req.headers.authorization:", req.headers.authorization ? "FOUND" : "NOT FOUND");
+console.log("  - req.query.token:", req.query.token ? "FOUND" : "NOT FOUND");
 ```
 
-### Frontend Environment Variables
-```env
-VITE_API_URL=https://devdash-github-oauth.onrender.com
+### 3. Frontend Token Detection Improvements
+
+**File: `frontend/src/utils/api.js`**
+
+- **Multiple Cookie Checks**: Check for all cookie variations
+- **URL Token Fallback**: Check for tokens in URL parameters
+- **Enhanced Logging**: Better debugging information
+
+```javascript
+// ✅ Function to get token from multiple sources
+function getTokenFromMultipleSources() {
+  // Try to get token from multiple cookie variations
+  const cookies = document.cookie.split(';');
+  const cookieNames = ['token', 'token_alt', 'token_cross', 'token_debug'];
+  
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (cookieNames.includes(name)) {
+      console.log(`🍪 Found token in cookie: ${name}`);
+      return value;
+    }
+  }
+  
+  // Try to get token from localStorage (fallback)
+  const localStorageToken = localStorage.getItem('auth_token');
+  if (localStorageToken) {
+    console.log("💾 Found token in localStorage");
+    return localStorageToken;
+  }
+  
+  // Try to get token from URL parameters (OAuth fallback)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlToken = urlParams.get('token');
+  if (urlToken) {
+    console.log("🔗 Found token in URL parameters");
+    return urlToken;
+  }
+  
+  console.log("❌ No token found in any source");
+  return null;
+}
 ```
 
-## How the Fixed Flow Works
+### 4. Frontend AuthContext Improvements
 
-### 1. OAuth Flow (Simplified)
-1. User clicks "Login with GitHub"
-2. Redirected to GitHub OAuth
-3. GitHub redirects back to callback URL
-4. Backend sets cookie and redirects with token in URL
-5. Frontend detects token in URL and sets it as cookie
-6. Frontend makes API call with token
-7. User is authenticated and redirected to dashboard
+**File: `frontend/src/context/AuthContext.jsx`**
 
-### 2. Error Handling
-- OAuth errors are caught and displayed
-- Loading state is properly managed
-- Infinite loops are prevented
+- **Multiple Cookie Setting**: Set multiple cookie variations when token is found in URL
+- **Better Security Settings**: Proper secure and SameSite settings
+- **Enhanced Error Handling**: Better handling of OAuth errors
 
-### 3. Cookie Management
-- Multiple cookie strategies for different platforms
-- Proper domain detection
-- Fallback to URL token if cookies fail
+```javascript
+// ✅ Check for token in URL (fallback from OAuth)
+const urlParams = new URLSearchParams(window.location.search);
+const tokenFromUrl = urlParams.get('token');
 
-## Testing Steps
+if (tokenFromUrl) {
+  console.log("🔑 Found token in URL, setting as cookie...");
+  
+  // Set the token as a cookie with proper parameters
+  const isSecure = window.location.protocol === 'https:';
+  const cookieValue = `token=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}`;
+  
+  if (isSecure) {
+    document.cookie = `${cookieValue}; secure; samesite=strict`;
+  } else {
+    document.cookie = `${cookieValue}; samesite=lax`;
+  }
+  
+  // Also set alternative cookie variations for better compatibility
+  if (isSecure) {
+    document.cookie = `token_alt=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=none`;
+    document.cookie = `token_cross=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=none`;
+  }
+  
+  // Clear the token from URL
+  window.history.replaceState({}, document.title, window.location.pathname);
+  
+  console.log("✅ Token set as cookies from URL");
+}
+```
 
-### 1. Test Environment Variables
-Visit: `https://devdash-github-oauth.onrender.com/api/auth/test-oauth`
+### 5. Enhanced Logout Route
+
+**File: `backend/routes/authRoutes.js`**
+
+- **Clear All Cookies**: Clear all token cookie variations
+- **Better Domain Handling**: Proper domain handling for cookie clearing
+
+```javascript
+// ✅ Clear all token cookie variations
+res.clearCookie("token", cookieOptions);
+res.clearCookie("token_alt", cookieOptions);
+res.clearCookie("token_cross", cookieOptions);
+```
+
+### 6. Test Endpoints
+
+**File: `backend/routes/authRoutes.js`**
+
+- **Test OAuth Configuration**: `/api/auth/test-oauth` - Check environment variables
+- **Test Cookie Setting**: `/api/auth/test-callback` - Simulate OAuth callback
+- **Debug Cookies**: `/api/auth/debug/cookies` - Check cookie presence
+- **Test Cookie Setting**: `/api/auth/debug/set-cookie` - Test cookie setting
+
+## 🧪 Testing Steps
+
+### 1. Environment Variables Check
+
+Visit: `https://your-backend.onrender.com/api/auth/test-oauth`
+
+Expected response:
+```json
+{
+  "message": "OAuth test endpoint",
+  "environment": "production",
+  "frontendUrl": "https://your-frontend.onrender.com",
+  "cookieDomain": null,
+  "githubClientId": "SET",
+  "githubCallbackUrl": "https://your-backend.onrender.com/api/auth/github/callback",
+  "jwtSecret": "SET",
+  "success": true
+}
+```
 
 ### 2. Test Cookie Setting
-Visit: `https://devdash-github-oauth.onrender.com/api/auth/debug/set-cookie`
 
-### 3. Test Cookie Reading
-Visit: `https://devdash-github-oauth.onrender.com/api/auth/debug/cookies`
+Visit: `https://your-backend.onrender.com/api/auth/test-callback`
 
-### 4. Test OAuth Flow
-1. Clear all cookies and localStorage
-2. Go to: `https://devdash-github-oauth-9xkh.onrender.com/login`
-3. Click "Login with GitHub"
-4. Complete OAuth flow
-5. Check if redirected to dashboard without infinite loading
+This will:
+- Set test cookies
+- Redirect to your frontend with a test token
+- Should show you're logged in
 
-## Debug Messages to Look For
+### 3. Debug Cookies
 
-### Backend Logs
+Visit: `https://your-backend.onrender.com/api/auth/debug/cookies`
+
+Check if cookies are being sent with requests.
+
+### 4. Full OAuth Flow Test
+
+1. Go to your frontend: `https://your-frontend.onrender.com`
+2. Click "Login with GitHub"
+3. Complete GitHub OAuth
+4. Should redirect to dashboard with user logged in
+
+## 🔧 Environment Variables Required
+
+Make sure these are set in your backend environment:
+
+```bash
+NODE_ENV=production
+FRONTEND_URL=https://your-frontend.onrender.com
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_CALLBACK_URL=https://your-backend.onrender.com/api/auth/github/callback
+JWT_SECRET=your_jwt_secret
 ```
-🚀 GitHub OAuth login initiated
-🔄 GitHub callback received
-🔐 GitHub callback processing for user: [username]
-🍪 Cookie set with options: {...}
-🔗 Redirecting to: [frontend-url]
-```
 
-### Frontend Console
-```
-🔍 Starting authentication initialization...
-🔑 Found token in URL, setting as cookie...
-✅ Token set as cookie from URL
-📡 Attempting to fetch user profile...
-✅ User authenticated successfully
-🏁 Authentication initialization complete
-```
+## 🎯 Expected Behavior After Fix
 
-## Common Issues & Solutions
+1. **OAuth Flow**: GitHub OAuth should complete successfully
+2. **Cookie Setting**: Multiple cookies should be set in browser
+3. **Authentication**: User should be logged in and redirected to dashboard
+4. **No Infinite Loading**: Loading state should resolve quickly
+5. **No Repeated Prompts**: GitHub password should not be asked repeatedly
 
-### Issue 1: Still Getting Infinite Loading
-**Symptoms**: Loading spinner never stops
-**Solution**: Check browser console for errors, clear cookies and localStorage
+## 🚨 Troubleshooting
 
-### Issue 2: GitHub Password Prompt Repeated
-**Symptoms**: GitHub asks for password multiple times
-**Solution**: Check GitHub OAuth App callback URL settings
+### If still getting 401 errors:
 
-### Issue 3: Cookies Not Being Set
-**Symptoms**: No cookies in browser developer tools
-**Solution**: Check environment variables, especially `COOKIE_DOMAIN`
+1. **Check Environment Variables**: Use `/api/auth/test-oauth` endpoint
+2. **Check Cookie Setting**: Use `/api/auth/test-callback` endpoint
+3. **Check Browser Cookies**: Open DevTools → Application → Cookies
+4. **Check Network Tab**: Look for cookie headers in requests
 
-### Issue 4: OAuth Callback Not Working
-**Symptoms**: Redirected to error page
-**Solution**: Verify GitHub OAuth App configuration
+### If cookies are not being set:
 
-## Files Modified
+1. **HTTPS Required**: Ensure both frontend and backend use HTTPS
+2. **SameSite Settings**: Check browser console for cookie warnings
+3. **Domain Issues**: Try without setting cookie domain in production
 
-1. **`frontend/src/context/AuthContext.jsx`** - Simplified authentication logic
-2. **`backend/routes/authRoutes.js`** - Enhanced OAuth callback
-3. **`frontend/src/components/Auth/ProtectedRoute.jsx`** - Better loading state
+### If OAuth callback fails:
 
-## Next Steps
+1. **GitHub App Settings**: Verify callback URL in GitHub OAuth app
+2. **Environment Variables**: Check all required variables are set
+3. **Backend Logs**: Check backend console for OAuth errors
 
-1. **Deploy the updated code** to your production environment
-2. **Set all environment variables** in your deployment platform
-3. **Update GitHub OAuth App settings** with correct callback URL
-4. **Test the OAuth flow** using the steps above
-5. **Monitor console logs** for the new debug messages
+## 📝 Key Changes Summary
 
-The key fixes are:
-- **Removed infinite loop logic** from authentication context
-- **Simplified OAuth flow** to prevent redirect loops
-- **Improved cookie handling** for different deployment platforms
-- **Better error handling** to stop loading on errors
+1. **Removed problematic domain setting** for onrender.com subdomains
+2. **Added multiple cookie variations** for better compatibility
+3. **Enhanced token detection** in both frontend and backend
+4. **Improved error handling** and logging
+5. **Added test endpoints** for debugging
+6. **Better URL token fallback** handling
 
-This should resolve the infinite loading state and repeated GitHub password prompts. 
+The solution addresses the core issue of cookies not being set properly in production while maintaining security and providing multiple fallback mechanisms. 

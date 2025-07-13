@@ -53,42 +53,47 @@ router.get(
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
       const redirectTo = decodeURIComponent(req.query.state || "/dashboard");
 
-      // Enhanced cookie configuration
+      // ✅ Simplified and robust cookie configuration
       const getCookieOptions = () => {
+        const isProduction = process.env.NODE_ENV === "production";
+        
         const options = {
           httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // lowercase
-          maxAge: 7 * 24 * 60 * 60 * 1000,
+          secure: isProduction,
+          sameSite: isProduction ? "none" : "lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
           path: "/",
         };
 
-        // Handle domain configuration for production
-        if (process.env.NODE_ENV === "production") {
-          // Try to extract domain from frontend URL
+        // ✅ Simplified domain handling for production
+        if (isProduction) {
           try {
             const url = new URL(frontendUrl);
-            if (url.hostname !== "localhost") {
-              // For Render.com deployments
-              if (url.hostname.includes('onrender.com')) {
-                options.domain = '.onrender.com';
-              } 
-              // For Vercel deployments
-              else if (url.hostname.includes('vercel.app')) {
-                options.domain = '.vercel.app';
-              }
-              // For custom domains
-              else {
-                options.domain = url.hostname;
-              }
+            const hostname = url.hostname;
+            
+            // For onrender.com subdomains
+            if (hostname.includes('onrender.com')) {
+              // Don't set domain for onrender.com - let browser handle it
+              console.log("🌐 OnRender.com detected - not setting domain for cookie");
+            }
+            // For vercel.app subdomains  
+            else if (hostname.includes('vercel.app')) {
+              // Don't set domain for vercel.app - let browser handle it
+              console.log("🌐 Vercel.app detected - not setting domain for cookie");
+            }
+            // For custom domains
+            else if (!hostname.includes('localhost')) {
+              options.domain = hostname;
+              console.log("🌐 Custom domain detected:", hostname);
             }
           } catch (error) {
-            console.warn("Could not parse frontend URL for cookie domain:", error);
+            console.warn("⚠️ Could not parse frontend URL for cookie domain:", error);
           }
 
           // Allow explicit override
           if (process.env.COOKIE_DOMAIN) {
             options.domain = process.env.COOKIE_DOMAIN;
+            console.log("🌐 Using explicit cookie domain:", process.env.COOKIE_DOMAIN);
           }
         }
 
@@ -101,7 +106,23 @@ router.get(
 
       console.log("🍪 Cookie set with options:", cookieOptions);
 
-      // For debugging - set a non-httpOnly cookie
+      // ✅ Set multiple cookie variations for better compatibility
+      if (process.env.NODE_ENV === "production") {
+        // Set without domain for better cross-subdomain compatibility
+        res.cookie("token_alt", token, {
+          ...cookieOptions,
+          domain: undefined,
+        });
+        
+        // Set with SameSite=None for cross-site requests
+        res.cookie("token_cross", token, {
+          ...cookieOptions,
+          domain: undefined,
+          sameSite: "none",
+        });
+      }
+
+      // For debugging - set a non-httpOnly cookie in development
       if (process.env.NODE_ENV !== "production") {
         res.cookie("token_debug", token, {
           ...cookieOptions,
@@ -109,7 +130,7 @@ router.get(
         });
       }
 
-      // Redirect to frontend with token in URL as fallback
+      // ✅ Redirect to frontend with token in URL as fallback
       const redirectUrl = new URL(redirectTo, frontendUrl);
       redirectUrl.searchParams.set('token', token);
       
@@ -126,11 +147,24 @@ router.get(
 // Authenticated profile route with multiple token sources
 router.get("/profile", async (req, res) => {
   try {
+    // ✅ Check multiple cookie variations and token sources
     let token = req.cookies.token || 
+                req.cookies.token_alt || 
+                req.cookies.token_cross ||
+                req.cookies.token_debug ||
                 req.headers.authorization?.replace('Bearer ', '') || 
                 req.query.token;
 
+    console.log("🔍 Token sources checked:");
+    console.log("  - req.cookies.token:", req.cookies.token ? "FOUND" : "NOT FOUND");
+    console.log("  - req.cookies.token_alt:", req.cookies.token_alt ? "FOUND" : "NOT FOUND");
+    console.log("  - req.cookies.token_cross:", req.cookies.token_cross ? "FOUND" : "NOT FOUND");
+    console.log("  - req.cookies.token_debug:", req.cookies.token_debug ? "FOUND" : "NOT FOUND");
+    console.log("  - req.headers.authorization:", req.headers.authorization ? "FOUND" : "NOT FOUND");
+    console.log("  - req.query.token:", req.query.token ? "FOUND" : "NOT FOUND");
+
     if (!token) {
+      console.log("❌ No token found in any source");
       return res.status(401).json({
         message: "Access token required",
         success: false,
@@ -198,7 +232,10 @@ router.post("/logout", (req, res) => {
       }
     }
 
+    // ✅ Clear all token cookie variations
     res.clearCookie("token", cookieOptions);
+    res.clearCookie("token_alt", cookieOptions);
+    res.clearCookie("token_cross", cookieOptions);
     
     // Also clear debug cookie if exists
     if (process.env.NODE_ENV !== "production") {
@@ -309,6 +346,62 @@ router.get("/test-oauth", (req, res) => {
     jwtSecret: process.env.JWT_SECRET ? "SET" : "NOT SET",
     success: true,
   });
+});
+
+// ✅ Test endpoint to simulate OAuth callback and set cookies
+router.get("/test-callback", (req, res) => {
+  try {
+    console.log("🧪 Test callback endpoint called");
+    
+    // Create a test token
+    const testToken = jwt.sign(
+      {
+        userId: "test-user-id",
+        username: "testuser",
+        email: "test@example.com",
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    
+    // Set cookies with the same logic as the real callback
+    const isProduction = process.env.NODE_ENV === "production";
+    
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      maxAge: 60 * 60 * 1000, // 1 hour for test
+      path: "/",
+    };
+
+    // Set multiple cookie variations
+    res.cookie("token", testToken, cookieOptions);
+    res.cookie("token_alt", testToken, { ...cookieOptions, domain: undefined });
+    res.cookie("token_cross", testToken, { ...cookieOptions, domain: undefined, sameSite: "none" });
+    
+    if (process.env.NODE_ENV !== "production") {
+      res.cookie("token_debug", testToken, { ...cookieOptions, httpOnly: false });
+    }
+
+    console.log("🍪 Test cookies set with options:", cookieOptions);
+    
+    // Redirect to frontend with token in URL
+    const redirectUrl = new URL("/dashboard", frontendUrl);
+    redirectUrl.searchParams.set('token', testToken);
+    
+    console.log("🔗 Redirecting to test URL:", redirectUrl.toString());
+    res.redirect(redirectUrl.toString());
+  } catch (error) {
+    console.error("❌ Error in test callback:", error);
+    res.status(500).json({
+      message: "Test callback failed",
+      error: error.message,
+      success: false,
+    });
+  }
 });
 
 module.exports = router;

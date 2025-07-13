@@ -38,11 +38,13 @@ api.interceptors.request.use(
 
 // ✅ Function to get token from multiple sources
 function getTokenFromMultipleSources() {
-  // Try to get token from cookies
+  // Try to get token from multiple cookie variations
   const cookies = document.cookie.split(';');
+  const cookieNames = ['token', 'token_alt', 'token_cross', 'token_debug'];
+  
   for (let cookie of cookies) {
     const [name, value] = cookie.trim().split('=');
-    if (name === 'token' || name === 'token_0' || name === 'token_1' || name === 'token_2') {
+    if (cookieNames.includes(name)) {
       console.log(`🍪 Found token in cookie: ${name}`);
       return value;
     }
@@ -53,6 +55,14 @@ function getTokenFromMultipleSources() {
   if (localStorageToken) {
     console.log("💾 Found token in localStorage");
     return localStorageToken;
+  }
+  
+  // Try to get token from URL parameters (OAuth fallback)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlToken = urlParams.get('token');
+  if (urlToken) {
+    console.log("🔗 Found token in URL parameters");
+    return urlToken;
   }
   
   console.log("❌ No token found in any source");
