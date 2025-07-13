@@ -66,6 +66,23 @@ export function AuthProvider({ children }) {
     initializeAuth();
   }, [initialized]);
 
+  // ✅ Add effect to handle URL changes after login
+  useEffect(() => {
+    if (!initialized || loading) return;
+
+    // Check if we're on the dashboard but have no user
+    if (window.location.pathname === "/dashboard" && !user) {
+      console.log("🚫 On dashboard but no user, redirecting to login");
+      navigate("/login", { replace: true });
+    }
+
+    // Check if we're on login but have a user
+    if (window.location.pathname === "/login" && user) {
+      console.log("✅ On login but user exists, redirecting to dashboard");
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, loading, initialized, navigate]);
+
   const login = () => {
     try {
       console.log("🔐 Initiating GitHub login...");
@@ -94,18 +111,40 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // ✅ Add function to refresh user state
+  const refreshUser = async () => {
+    try {
+      console.log("🔄 Refreshing user state...");
+      const profile = await getProfile();
+      if (profile && profile.user) {
+        setUser(profile.user);
+        return true;
+      } else {
+        setUser(null);
+        return false;
+      }
+    } catch (error) {
+      console.error("❌ Failed to refresh user:", error);
+      setUser(null);
+      return false;
+    }
+  };
+
   const value = {
     user,
     loading,
     login,
     logout,
+    refreshUser, // ✅ Expose refresh function
   };
 
   console.log(
     "🏗️ AuthContext render - User:",
     user ? "exists" : "null",
     "Loading:",
-    loading
+    loading,
+    "Initialized:",
+    initialized
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -35,21 +35,38 @@ router.get(
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
       const redirectTo = decodeURIComponent(req.query.state || "/dashboard");
 
-      // ✅ Set token as secure HTTP-only cookie with all necessary options
-      res.cookie("token", token, {
+      // ✅ Improved cookie configuration for production
+      const cookieOptions = {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: "/", // Explicit path
-        domain:
-          process.env.NODE_ENV === "production"
-            ? process.env.COOKIE_DOMAIN // Set this in your .env for production
-            : undefined,
-      });
+      };
+
+      // Handle domain configuration for production
+      if (process.env.NODE_ENV === "production") {
+        if (process.env.COOKIE_DOMAIN) {
+          cookieOptions.domain = process.env.COOKIE_DOMAIN;
+        } else {
+          // Auto-detect domain from frontend URL
+          try {
+            const url = new URL(frontendUrl);
+            if (url.hostname !== "localhost") {
+              cookieOptions.domain = url.hostname;
+            }
+          } catch (error) {
+            console.warn("Could not parse frontend URL for cookie domain:", error);
+          }
+        }
+      }
+
+      // Set the token cookie
+      res.cookie("token", token, cookieOptions);
 
       console.log("✅ Token cookie set successfully");
       console.log("🔗 Redirecting to:", `${frontendUrl}${redirectTo}`);
+      console.log("🍪 Cookie options:", cookieOptions);
 
       // ✅ Redirect without exposing token/user in URL
       res.redirect(`${frontendUrl}${redirectTo}`);
@@ -93,18 +110,35 @@ router.post("/logout", (req, res) => {
     console.log("🚪 Logging out user...");
 
     // ✅ Clear cookie with EXACT same options as when it was set
-    res.clearCookie("token", {
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       path: "/", // Must match the path used when setting the cookie
-      domain:
-        process.env.NODE_ENV === "production"
-          ? process.env.COOKIE_DOMAIN
-          : undefined,
-    });
+    };
+
+    // Handle domain configuration for production
+    if (process.env.NODE_ENV === "production") {
+      if (process.env.COOKIE_DOMAIN) {
+        cookieOptions.domain = process.env.COOKIE_DOMAIN;
+      } else {
+        // Auto-detect domain from frontend URL
+        try {
+          const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+          const url = new URL(frontendUrl);
+          if (url.hostname !== "localhost") {
+            cookieOptions.domain = url.hostname;
+          }
+        } catch (error) {
+          console.warn("Could not parse frontend URL for cookie domain:", error);
+        }
+      }
+    }
+
+    res.clearCookie("token", cookieOptions);
 
     console.log("✅ Token cookie cleared successfully");
+    console.log("🍪 Clear cookie options:", cookieOptions);
 
     res.json({
       message: "Logout successful",
