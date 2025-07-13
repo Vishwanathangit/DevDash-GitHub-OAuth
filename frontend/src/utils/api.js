@@ -1,128 +1,108 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000",
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
   withCredentials: true,
   timeout: 10000, // 10 seconds timeout
 });
 
-// Request interceptor for debugging
+// 🔐 Helper: Get token from cookies, localStorage, or URL
+function getTokenFromMultipleSources() {
+  try {
+    const cookieNames = ["token", "token_alt", "token_cross", "token_debug"];
+    const cookies = document.cookie.split(";");
+
+    for (let cookie of cookies) {
+      const [name, value] = cookie.trim().split("=");
+      if (cookieNames.includes(name)) {
+        console.log(`🍪 Found token in cookie: ${name}`);
+        return value;
+      }
+    }
+
+    const localStorageToken = localStorage.getItem("auth_token");
+    if (localStorageToken) {
+      console.log("💾 Found token in localStorage");
+      return localStorageToken;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get("token");
+    if (urlToken) {
+      console.log("🔗 Found token in URL parameters");
+      return urlToken;
+    }
+
+    console.warn("❌ No token found in any source");
+    return null;
+  } catch (err) {
+    console.error("❌ Error extracting token:", err);
+    return null;
+  }
+}
+
+// 🚀 Request Interceptor
 api.interceptors.request.use(
   (config) => {
-    console.log(
-      `🚀 Making ${config.method?.toUpperCase()} request to: ${config.baseURL}${
-        config.url
-      }`
-    );
-    console.log(`📡 Request headers:`, config.headers);
-    console.log(`🍪 Cookies will be sent: ${config.withCredentials}`);
-    
-    // ✅ Add retry logic for network errors
+    console.log(`🚀 ${config.method?.toUpperCase()} → ${config.baseURL}${config.url}`);
+    console.log("📡 Headers:", config.headers);
+
     config.retryCount = config.retryCount || 0;
     config.maxRetries = 3;
-    
-    // ✅ Try to get token from multiple sources
+
     const token = getTokenFromMultipleSources();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log("🔑 Added Authorization header with token");
+      console.log("🔑 Added Authorization header");
     }
-    
+
     return config;
   },
   (error) => {
-    console.error("❌ Request interceptor error:", error);
+    console.error("❌ Request error:", error);
     return Promise.reject(error);
   }
 );
 
-// ✅ Function to get token from multiple sources
-function getTokenFromMultipleSources() {
-  // Try to get token from multiple cookie variations
-  const cookies = document.cookie.split(';');
-  const cookieNames = ['token', 'token_alt', 'token_cross', 'token_debug'];
-  
-  for (let cookie of cookies) {
-    const [name, value] = cookie.trim().split('=');
-    if (cookieNames.includes(name)) {
-      console.log(`🍪 Found token in cookie: ${name}`);
-      return value;
-    }
-  }
-  
-  // Try to get token from localStorage (fallback)
-  const localStorageToken = localStorage.getItem('auth_token');
-  if (localStorageToken) {
-    console.log("💾 Found token in localStorage");
-    return localStorageToken;
-  }
-  
-  // Try to get token from URL parameters (OAuth fallback)
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlToken = urlParams.get('token');
-  if (urlToken) {
-    console.log("🔗 Found token in URL parameters");
-    return urlToken;
-  }
-  
-  console.log("❌ No token found in any source");
-  return null;
-}
-
-// Response interceptor for debugging
+// 📦 Response Interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log(`✅ Response ${response.status} from: ${response.config.url}`);
-    console.log(`📦 Response data:`, response.data);
-    console.log(`🍪 Set-Cookie headers:`, response.headers["set-cookie"]);
+    console.log(`✅ Response ${response.status} ← ${response.config.url}`);
+    console.log("📦 Data:", response.data);
     return response;
   },
   async (error) => {
-    console.error(`❌ Response error from: ${error.config?.url}`);
-    console.error(`📊 Status: ${error.response?.status}`);
-    console.error(`📦 Error data:`, error.response?.data);
-    console.error(`🍪 Response headers:`, error.response?.headers);
-
-    // ✅ Retry logic for network errors
     const config = error.config;
-    if (config && config.retryCount < config.maxRetries) {
-      config.retryCount += 1;
-      console.log(`🔄 Retrying request (${config.retryCount}/${config.maxRetries}): ${config.url}`);
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, 1000 * config.retryCount));
-      
-      return api(config);
-    }
+    const status = error.response?.status;
 
-    if (error.response?.status === 401) {
-      console.log("🔐 401 Unauthorized - Session may be expired or invalid");
-      // Log current cookies
-      console.log("🍪 Current cookies:", document.cookie);
-      
-      // ✅ Clear any invalid tokens from localStorage if they exist
-      if (typeof window !== 'undefined') {
-        const invalidTokens = ['token', 'auth_token', 'access_token'];
-        invalidTokens.forEach(tokenName => {
-          if (localStorage.getItem(tokenName)) {
-            console.log(`🧹 Clearing invalid token from localStorage: ${tokenName}`);
-            localStorage.removeItem(tokenName);
-          }
-        });
+    console.error(`❌ Response error from: ${config?.url}`);
+    console.error(`📊 Status: ${status}`);
+    console.error("📦 Error data:", error.response?.data);
+
+    // 🔁 Retry on network or 5xx server errors
+    if (!error.response || status >= 500) {
+      if (config && config.retryCount < config.maxRetries) {
+        config.retryCount += 1;
+        console.warn(`🔁 Retry ${config.retryCount}/${config.maxRetries}: ${config.url}`);
+        await new Promise(res => setTimeout(res, 1000 * config.retryCount));
+        return api(config);
       }
     }
 
-    // ✅ Handle network errors specifically
+    // 🔐 Clear invalid auth tokens on 401
+    if (status === 401) {
+      console.warn("🔐 Unauthorized - clearing stored tokens");
+      ["auth_token", "token", "access_token"].forEach((key) => {
+        localStorage.removeItem(key);
+      });
+    }
+
+    // 🌐 Handle network errors
     if (!error.response) {
-      console.error("🌐 Network error - no response received");
-      console.error("🔍 Error details:", {
+      console.error("🌐 Network Error:", {
         message: error.message,
         code: error.code,
-        config: {
-          baseURL: error.config?.baseURL,
-          url: error.config?.url,
-          method: error.config?.method
-        }
+        url: config?.url,
       });
     }
 
