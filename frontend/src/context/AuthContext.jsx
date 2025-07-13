@@ -29,8 +29,13 @@ export function AuthProvider({ children }) {
       
       if (tokenFromUrl) {
         console.log("🔑 Found token in URL, setting as cookie...");
-        // Set the token as a cookie
-        document.cookie = `token=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=strict`;
+        // Set the token as a cookie with proper parameters
+        const cookieValue = `token=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}`;
+        if (window.location.protocol === 'https:') {
+          document.cookie = `${cookieValue}; secure; samesite=strict`;
+        } else {
+          document.cookie = `${cookieValue}; samesite=lax`;
+        }
         
         // Clear the token from URL
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -81,7 +86,7 @@ export function AuthProvider({ children }) {
     initializeAuth();
   }, [initialized]);
 
-  // ✅ Add effect to handle URL changes after login
+  // ✅ Simplified effect to handle navigation after authentication
   useEffect(() => {
     if (!initialized || loading) return;
 
@@ -98,7 +103,7 @@ export function AuthProvider({ children }) {
     }
   }, [user, loading, initialized, navigate]);
 
-  // ✅ Add effect to handle URL parameters after OAuth redirect
+  // ✅ Handle OAuth errors
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const error = urlParams.get('error');
@@ -107,6 +112,7 @@ export function AuthProvider({ children }) {
       console.log("❌ OAuth error detected:", error);
       // Clear any error parameters from URL
       window.history.replaceState({}, document.title, window.location.pathname);
+      setLoading(false); // Stop loading on error
     }
   }, []);
 
@@ -157,60 +163,12 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ✅ Add function to check if we're coming from OAuth callback
-  const checkOAuthCallback = () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const token = urlParams.get('token');
-    
-    if (code && state) {
-      console.log("🔄 Detected OAuth callback, waiting for cookie...");
-      // Wait a bit for the cookie to be set, then refresh user state
-      setTimeout(async () => {
-        console.log("🔄 Checking user state after OAuth callback...");
-        const success = await refreshUser();
-        if (success) {
-          console.log("✅ User authenticated after OAuth callback");
-          navigate("/dashboard", { replace: true });
-        } else {
-          console.log("❌ Failed to authenticate after OAuth callback");
-          navigate("/login", { replace: true });
-        }
-      }, 1000);
-    } else if (token) {
-      console.log("🔑 Detected token in URL, setting cookie and checking user...");
-      // Set the token as a cookie
-      document.cookie = `token=${token}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=strict`;
-      
-      // Clear the token from URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-      
-      // Check user state
-      setTimeout(async () => {
-        const success = await refreshUser();
-        if (success) {
-          console.log("✅ User authenticated with token from URL");
-          navigate("/dashboard", { replace: true });
-        } else {
-          console.log("❌ Failed to authenticate with token from URL");
-          navigate("/login", { replace: true });
-        }
-      }, 500);
-    }
-  };
-
-  // ✅ Check for OAuth callback on mount
-  useEffect(() => {
-    checkOAuthCallback();
-  }, []);
-
   const value = {
     user,
     loading,
     login,
     logout,
-    refreshUser, // ✅ Expose refresh function
+    refreshUser,
   };
 
   console.log(
