@@ -83,6 +83,18 @@ export function AuthProvider({ children }) {
     }
   }, [user, loading, initialized, navigate]);
 
+  // ✅ Add effect to handle URL parameters after OAuth redirect
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const error = urlParams.get('error');
+    
+    if (error) {
+      console.log("❌ OAuth error detected:", error);
+      // Clear any error parameters from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   const login = () => {
     try {
       console.log("🔐 Initiating GitHub login...");
@@ -129,6 +141,34 @@ export function AuthProvider({ children }) {
       return false;
     }
   };
+
+  // ✅ Add function to check if we're coming from OAuth callback
+  const checkOAuthCallback = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    
+    if (code && state) {
+      console.log("🔄 Detected OAuth callback, waiting for cookie...");
+      // Wait a bit for the cookie to be set, then refresh user state
+      setTimeout(async () => {
+        console.log("🔄 Checking user state after OAuth callback...");
+        const success = await refreshUser();
+        if (success) {
+          console.log("✅ User authenticated after OAuth callback");
+          navigate("/dashboard", { replace: true });
+        } else {
+          console.log("❌ Failed to authenticate after OAuth callback");
+          navigate("/login", { replace: true });
+        }
+      }, 1000);
+    }
+  };
+
+  // ✅ Check for OAuth callback on mount
+  useEffect(() => {
+    checkOAuthCallback();
+  }, []);
 
   const value = {
     user,

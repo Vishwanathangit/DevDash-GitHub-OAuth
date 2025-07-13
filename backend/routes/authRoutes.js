@@ -22,6 +22,8 @@ router.get(
   }),
   (req, res) => {
     try {
+      console.log("🔐 GitHub callback received for user:", req.user?.username);
+      
       const token = jwt.sign(
         {
           userId: req.user._id,
@@ -35,7 +37,7 @@ router.get(
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
       const redirectTo = decodeURIComponent(req.query.state || "/dashboard");
 
-      // ✅ Improved cookie configuration for production
+      // ✅ Enhanced cookie configuration for production
       const cookieOptions = {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -48,12 +50,22 @@ router.get(
       if (process.env.NODE_ENV === "production") {
         if (process.env.COOKIE_DOMAIN) {
           cookieOptions.domain = process.env.COOKIE_DOMAIN;
+          console.log("🍪 Using explicit cookie domain:", process.env.COOKIE_DOMAIN);
         } else {
           // Auto-detect domain from frontend URL
           try {
             const url = new URL(frontendUrl);
             if (url.hostname !== "localhost") {
-              cookieOptions.domain = url.hostname;
+              // For onrender.com domains, we need to handle subdomains properly
+              if (url.hostname.includes('onrender.com')) {
+                // Extract the subdomain part for onrender.com
+                const subdomain = url.hostname.split('.')[0];
+                cookieOptions.domain = `.onrender.com`;
+                console.log("🍪 Using onrender.com cookie domain:", cookieOptions.domain);
+              } else {
+                cookieOptions.domain = url.hostname;
+                console.log("🍪 Using auto-detected cookie domain:", cookieOptions.domain);
+              }
             }
           } catch (error) {
             console.warn("Could not parse frontend URL for cookie domain:", error);
@@ -61,12 +73,15 @@ router.get(
         }
       }
 
+      console.log("🍪 Setting cookie with options:", cookieOptions);
+      console.log("🔗 Frontend URL:", frontendUrl);
+      console.log("🎯 Redirecting to:", `${frontendUrl}${redirectTo}`);
+
       // Set the token cookie
       res.cookie("token", token, cookieOptions);
 
       console.log("✅ Token cookie set successfully");
       console.log("🔗 Redirecting to:", `${frontendUrl}${redirectTo}`);
-      console.log("🍪 Cookie options:", cookieOptions);
 
       // ✅ Redirect without exposing token/user in URL
       res.redirect(`${frontendUrl}${redirectTo}`);
@@ -127,7 +142,12 @@ router.post("/logout", (req, res) => {
           const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
           const url = new URL(frontendUrl);
           if (url.hostname !== "localhost") {
-            cookieOptions.domain = url.hostname;
+            // For onrender.com domains, we need to handle subdomains properly
+            if (url.hostname.includes('onrender.com')) {
+              cookieOptions.domain = `.onrender.com`;
+            } else {
+              cookieOptions.domain = url.hostname;
+            }
           }
         } catch (error) {
           console.warn("Could not parse frontend URL for cookie domain:", error);
@@ -175,13 +195,55 @@ router.get("/health", (req, res) => {
 
 // Debug route to check cookie presence (remove in production)
 router.get("/debug/cookies", (req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(404).json({ message: "Not found" });
-  }
-
   res.json({
     cookies: req.cookies,
     headers: req.headers,
+    environment: process.env.NODE_ENV,
+    frontendUrl: process.env.FRONTEND_URL,
+    cookieDomain: process.env.COOKIE_DOMAIN,
+    success: true,
+  });
+});
+
+// Debug route to test cookie setting
+router.get("/debug/set-cookie", (req, res) => {
+  const testToken = "test-token-" + Date.now();
+  
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+    maxAge: 60 * 1000, // 1 minute
+    path: "/",
+  };
+
+  // Handle domain configuration for production
+  if (process.env.NODE_ENV === "production") {
+    if (process.env.COOKIE_DOMAIN) {
+      cookieOptions.domain = process.env.COOKIE_DOMAIN;
+    } else {
+      try {
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        const url = new URL(frontendUrl);
+        if (url.hostname !== "localhost") {
+          if (url.hostname.includes('onrender.com')) {
+            cookieOptions.domain = `.onrender.com`;
+          } else {
+            cookieOptions.domain = url.hostname;
+          }
+        }
+      } catch (error) {
+        console.warn("Could not parse frontend URL for cookie domain:", error);
+      }
+    }
+  }
+
+  res.cookie("test-token", testToken, cookieOptions);
+  
+  res.json({
+    message: "Test cookie set",
+    cookieOptions,
+    testToken,
     success: true,
   });
 });

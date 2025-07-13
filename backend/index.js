@@ -12,7 +12,7 @@ if (process.env.MONGODB_URI) {
   connectDB();
 }
 
-// ✅ Improved CORS configuration for production
+// ✅ Enhanced CORS configuration for production
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -36,6 +36,12 @@ const corsOptions = {
       try {
         const frontendUrl = new URL(process.env.FRONTEND_URL);
         const originUrl = new URL(origin);
+        
+        // Special handling for onrender.com domains
+        if (frontendUrl.hostname.includes('onrender.com') && originUrl.hostname.includes('onrender.com')) {
+          console.log("✅ Allowing onrender.com origin:", origin);
+          return callback(null, true);
+        }
         
         // Allow same domain and subdomains
         if (originUrl.hostname === frontendUrl.hostname || 
