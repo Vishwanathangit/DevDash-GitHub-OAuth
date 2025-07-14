@@ -11,26 +11,20 @@ export function AuthProvider({ children }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Only run initialization once
+  
     if (initialized) return;
 
     const initializeAuth = async () => {
-      console.log("🔍 Starting authentication initialization...");
-      console.log("🌐 Current URL:", window.location.href);
-      console.log("🍪 Current cookies:", document.cookie);
-      console.log(
-        "🎯 API Base URL:",
-        import.meta.env.VITE_API_URL || "http://localhost:5000"
-      );
+ 
 
-      // ✅ Check for token in URL (fallback from OAuth)
+   
       const urlParams = new URLSearchParams(window.location.search);
       const tokenFromUrl = urlParams.get('token');
       
       if (tokenFromUrl) {
-        console.log("🔑 Found token in URL, setting as cookie...");
+       
         
-        // Set the token as a cookie with proper parameters
+      
         const isSecure = window.location.protocol === 'https:';
         const cookieValue = `token=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}`;
         
@@ -40,27 +34,27 @@ export function AuthProvider({ children }) {
           document.cookie = `${cookieValue}; samesite=lax`;
         }
         
-        // Also set alternative cookie variations for better compatibility
+    
         if (isSecure) {
           document.cookie = `token_alt=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=none`;
           document.cookie = `token_cross=${tokenFromUrl}; path=/; max-age=${7 * 24 * 60 * 60}; secure; samesite=none`;
         }
         
-        // Clear the token from URL
+   
         window.history.replaceState({}, document.title, window.location.pathname);
         
-        console.log("✅ Token set as cookies from URL");
+        
       }
 
       try {
-        console.log("📡 Attempting to fetch user profile...");
+   
         const profile = await getProfile();
 
         if (profile && profile.user) {
-          console.log("✅ User authenticated successfully:", profile.user);
+          
           setUser(profile.user);
         } else {
-          console.log("❌ No user profile found in response:", profile);
+        
           setUser(null);
         }
       } catch (error) {
@@ -86,52 +80,51 @@ export function AuthProvider({ children }) {
       } finally {
         setLoading(false);
         setInitialized(true);
-        console.log("🏁 Authentication initialization complete");
-        console.log("👤 Final user state:", user);
-        console.log("⏳ Final loading state:", false);
+
       }
     };
 
     initializeAuth();
   }, [initialized]);
 
-  // ✅ Simplified effect to handle navigation after authentication
+
   useEffect(() => {
     if (!initialized || loading) return;
 
-    // Check if we're on the dashboard but have no user
+    
     if (window.location.pathname === "/dashboard" && !user) {
-      console.log("🚫 On dashboard but no user, redirecting to login");
+  
       navigate("/login", { replace: true });
     }
 
-    // Check if we're on login but have a user
+
     if (window.location.pathname === "/login" && user) {
-      console.log("✅ On login but user exists, redirecting to dashboard");
+    
       navigate("/dashboard", { replace: true });
     }
   }, [user, loading, initialized, navigate]);
 
-  // ✅ Handle OAuth errors
+  
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const error = urlParams.get('error');
     
     if (error) {
-      console.log("❌ OAuth error detected:", error);
-      // Clear any error parameters from URL
+      console.log("OAuth error detected:", error);
+      
       window.history.replaceState({}, document.title, window.location.pathname);
-      setLoading(false); // Stop loading on error
+      setLoading(false); 
     }
   }, []);
 
-  const login = () => {
+  const login = async() => {
     try {
-      console.log("🔐 Initiating GitHub login...");
+     
       setLoading(true);
-      loginWithGithub(); // redirects to GitHub OAuth
+      await loginWithGithub(); 
+      setInitialized(true)
     } catch (error) {
-      console.error("❌ Login initiation failed:", error);
+    
       navigate("/login", { replace: true });
     }
     finally{
@@ -141,24 +134,24 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      console.log("🚪 Initiating logout...");
+ 
       setLoading(true);
       await logoutUser();
-      console.log("✅ Logout successful");
+   
     } catch (error) {
-      console.error("❌ Logout failed:", error);
+      console.error("Logout failed:", error);
     } finally {
       setUser(null);
       setLoading(false);
-      console.log("🏠 Navigating to login page...");
+      
       navigate("/login", { replace: true });
     }
   };
 
-  // ✅ Add function to refresh user state
+
   const refreshUser = async () => {
     try {
-      console.log("🔄 Refreshing user state...");
+   
       const profile = await getProfile();
       if (profile && profile.user) {
         setUser(profile.user);
@@ -168,7 +161,7 @@ export function AuthProvider({ children }) {
         return false;
       }
     } catch (error) {
-      console.error("❌ Failed to refresh user:", error);
+      console.error("Failed to refresh user:", error);
       setUser(null);
       return false;
     }
@@ -180,16 +173,10 @@ export function AuthProvider({ children }) {
     login,
     logout,
     refreshUser,
+    initialized
   };
 
-  console.log(
-    "🏗️ AuthContext render - User:",
-    user ? "exists" : "null",
-    "Loading:",
-    loading,
-    "Initialized:",
-    initialized
-  );
+
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

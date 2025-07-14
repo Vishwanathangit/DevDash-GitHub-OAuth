@@ -8,12 +8,11 @@ const cookieParser = require("cookie-parser");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// 🔌 Connect to MongoDB
+
 if (process.env.MONGODB_URI) {
   connectDB();
 }
 
-// 🌐 Define allowed origins
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:5173",
@@ -22,17 +21,17 @@ const allowedOrigins = [
   "http://127.0.0.1:5000"
 ].filter(Boolean);
 
-// ✅ Final CORS setup
+
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // Allow tools like Postman
+    if (!origin) return callback(null, true); 
 
     try {
       const isAllowed = allowedOrigins.includes(origin);
 
       if (isAllowed) return callback(null, true);
 
-      // Allow subdomains in production
+      
       if (process.env.NODE_ENV === "production" && process.env.FRONTEND_URL) {
         const frontendUrl = new URL(process.env.FRONTEND_URL);
         const originUrl = new URL(origin);
@@ -44,7 +43,7 @@ const corsOptions = {
           return callback(null, true);
         }
 
-        // Allow onrender.com or vercel.app subdomains
+  
         if (
           frontendUrl.hostname.includes("onrender.com") &&
           originUrl.hostname.includes("onrender.com")
@@ -60,10 +59,10 @@ const corsOptions = {
         }
       }
     } catch (err) {
-      console.warn("❌ CORS origin check failed:", err);
+      console.warn("CORS origin check failed:", err);
     }
 
-    console.warn("❌ CORS blocked origin:", origin);
+    console.warn("CORS blocked origin:", origin);
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -72,13 +71,13 @@ const corsOptions = {
   exposedHeaders: ["Set-Cookie"],
 };
 
-// 🧩 Middleware
+
 app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(express.json());
 app.use(passport.initialize());
 
-// 📦 Routes
+
 const authRoutes = require("./routes/authRoutes");
 const githubRoutes = require("./routes/githubRoutes");
 const eventRoutes = require("./routes/eventRoutes");
@@ -89,7 +88,7 @@ app.use("/api/github", githubRoutes);
 app.use("/api/devto", devtoRoutes);
 app.use("/api/events", eventRoutes);
 
-// ✅ Health Check
+
 app.get("/", (req, res) => {
   res.json({
     message: "GitHub OAuth + Dev.to + Calendar Backend API",
@@ -97,9 +96,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// 🚀 Start Server
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`🌐 Allowed frontend: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
 });

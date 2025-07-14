@@ -3,7 +3,7 @@ const User = require("../models/User");
 
 const authenticateToken = async (req, res, next) => {
   try {
-    // ✅ Read token from secure cookie
+    
     const token = req.cookies.token;
 
     if (!token) {

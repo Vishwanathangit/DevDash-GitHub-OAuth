@@ -2,7 +2,7 @@ import { useAuth } from "../../context/AuthContext";
 import { FaGithub } from "react-icons/fa";
 
 export default function GitHubAuthButton() {
-  const { login } = useAuth();
+  const { login, user, loading, initialized } = useAuth();
 
   return (
     <button
