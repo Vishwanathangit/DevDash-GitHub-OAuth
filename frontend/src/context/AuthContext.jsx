@@ -132,8 +132,10 @@ export function AuthProvider({ children }) {
       loginWithGithub(); // redirects to GitHub OAuth
     } catch (error) {
       console.error("❌ Login initiation failed:", error);
-      setLoading(false);
       navigate("/login", { replace: true });
+    }
+    finally{
+      setLoading(false)
     }
   };
 
